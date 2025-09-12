@@ -216,7 +216,8 @@ CONTRACTS_FIELD_TYPES = {
     "软著件数": "int",
     "转化类型": "str",
     "许可类型": "str",
-    "生效日期": "datetime"
+    "生效日期": "datetime",
+    "部门": "str"
 }
 
 # 经费数据字段类型配置  
@@ -311,7 +312,8 @@ CONTRACTS_COLUMN_MAPPING = {
     "经费卡号": "fundids",
     "转化类型": "conversiontype",
     "许可类型": "licensetype",
-    "生效日期": "effective_date"
+    "生效日期": "effective_date",
+    "部门": "department"
 }
 
 PROJECT_FUNDS_COLUMN_MAPPING = {
@@ -392,7 +394,7 @@ OA_FIELD_MAPPING = {
         "field0040": "甲方地址", "field0041": "专利件数", "field0042": "到账金额",
         "field0043": "专利软著号", "field0044": "负责人职工号", "field0045": "软著件数",
         "field0046": "经费卡号", "field0047": "项目所属部门", "field0048": "转化类型",
-        "field0049": "许可类型"
+        "field0049": "许可类型", "field0050": "部门"
     },
     "project_funds": {
         "field0001": "项目名称", "field0002": "经费卡号", "field0003": "经费卡负责人",

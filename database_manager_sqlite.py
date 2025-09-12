@@ -84,6 +84,7 @@ class DatabaseManager:
                         conversiontype TEXT,
                         licensetype TEXT,
                         effective_date TEXT,
+                        department TEXT,
                         updateid VARCHAR(100),
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -150,6 +151,12 @@ class DatabaseManager:
                 # 为现有表添加updateid字段（如果不存在）
                 try:
                     conn.execute("ALTER TABLE contracts ADD COLUMN updateid VARCHAR(100)")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+                
+                # 为现有表添加department字段（如果不存在）
+                try:
+                    conn.execute("ALTER TABLE contracts ADD COLUMN department TEXT")
                 except sqlite3.OperationalError:
                     pass  # 字段已存在
                 

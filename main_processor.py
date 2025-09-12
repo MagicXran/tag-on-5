@@ -59,11 +59,12 @@ class RMSTagOnProcessor:
             process_logger.log_error("文件验证", f"目录下无Excel文件: {folder_path}")
             return False
     
-    def process_contracts_excel(self, file_path: Optional[str] = None) -> Tuple[List[Dict], List[Dict]]:
+    def process_contracts_excel(self, file_path: Optional[str] = None, personnel_dept_map: Optional[Dict[str, str]] = None) -> Tuple[List[Dict], List[Dict]]:
         """处理合同签订清单Excel文件
         
         Args:
             file_path: Excel文件路径，如果为None则使用配置中的路径
+            personnel_dept_map: 人员编号到部门的映射字典，可选
         
         Returns:
             Tuple[List[Dict], List[Dict]]: (插入的记录, 更新的记录)
@@ -76,7 +77,7 @@ class RMSTagOnProcessor:
                 raise ValueError("file_path is None")
             
             # 1. 数据清洗和筛选
-            df_contracts = self.data_cleaner.process_contracts_excel(file_path)
+            df_contracts = self.data_cleaner.process_contracts_excel(file_path, personnel_dept_map)
             
             if df_contracts.empty:
                 process_logger.log_warning("数据处理", "合同清单筛选后无有效数据")
@@ -309,8 +310,40 @@ class RMSTagOnProcessor:
         
         process_logger.log_start(f"处理合同文件夹: {folder_path}")
         
-        # 获取所有Excel文件
-        excel_files = self._get_excel_files(folder_path)
+        # 首先检查是否存在人员名单文件
+        personnel_file = self.data_cleaner.find_personnel_file(folder_path)
+        if not personnel_file:
+            error_msg = f"文件夹中未找到人员名单文件，请将人员名单文件放到文件夹 {folder_path} 中"
+            process_logger.log_error("人员名单检查", error_msg)
+            return {
+                "success": False,
+                "message": error_msg,
+                "processed_files": 0,
+                "all_inserted_records": [],
+                "all_updated_records": []
+            }
+        
+        # 加载人员名单
+        try:
+            personnel_dept_map = self.data_cleaner.load_personnel_list(folder_path)
+            process_logger.log_data_stats(
+                "人员名单加载成功",
+                "合同处理",
+                人员数量=len(personnel_dept_map)
+            )
+        except Exception as e:
+            error_msg = f"加载人员名单失败: {str(e)}"
+            process_logger.log_error("人员名单加载", error_msg)
+            return {
+                "success": False,
+                "message": error_msg,
+                "processed_files": 0,
+                "all_inserted_records": [],
+                "all_updated_records": []
+            }
+        
+        # 获取所有Excel文件（排除人员名单文件）
+        excel_files = [f for f in self._get_excel_files(folder_path) if '人员名单' not in os.path.basename(f)]
         if not excel_files:
             process_logger.log_warning("文件夹处理", f"文件夹中未找到Excel文件: {folder_path}")
             return {
@@ -336,8 +369,8 @@ class RMSTagOnProcessor:
                 try:
                     process_logger.log_excel_operation("处理合同Excel文件", excel_file)
                     
-                    # 直接传递文件路径给处理方法
-                    inserted_records, updated_records = self.process_contracts_excel(excel_file)
+                    # 直接传递文件路径和人员部门映射给处理方法
+                    inserted_records, updated_records = self.process_contracts_excel(excel_file, personnel_dept_map)
                     
                     results["processed_files"] += 1
                     results["total_inserted"] += len(inserted_records)

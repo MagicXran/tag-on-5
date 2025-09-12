@@ -97,7 +97,8 @@ class OASyncManager:
             "copyrightcount": "field0045",
             "fundids": "field0046",
             "conversiontype": "field0048",
-            "licensetype": "field0049"
+            "licensetype": "field0049",
+            "department" :"field0050"
         },
         "projectfunds": {
             "project_name": "field0001",

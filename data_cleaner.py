@@ -5,6 +5,7 @@
 import pandas as pd
 from datetime import datetime
 import re
+import os
 from typing import Any, Dict, List, Optional, Union
 from config import (
     CONTRACTS_FIELD_TYPES, PROJECT_FUNDS_FIELD_TYPES,
@@ -12,6 +13,7 @@ from config import (
     BUSINESS_FILTER_CONFIG, TYPE_CONVERTERS
 )
 from logger_utils import process_logger
+import glob
 
 
 class DataCleaner:
@@ -353,11 +355,52 @@ class DataCleaner:
         
         return df_split
 
-    def process_contracts_excel(self, file_path: str) -> pd.DataFrame:
+    def match_department_info(self, df_contracts: pd.DataFrame, personnel_dept_map: Dict[str, str]) -> pd.DataFrame:
+        """为合同数据匹配部门信息
+        
+        Args:
+            df_contracts: 合同数据DataFrame
+            personnel_dept_map: 人员编号到部门的映射字典
+            
+        Returns:
+            pd.DataFrame: 添加了部门信息的合同数据
+        """
+        process_logger.log_start("匹配部门信息")
+        
+        # 确保manageremployeeid字段存在
+        if 'manageremployeeid' not in df_contracts.columns:
+            process_logger.log_warning("部门匹配", "合同数据中没有负责人职工号字段")
+            df_contracts['department'] = ""
+            return df_contracts
+        
+        # 创建department列
+        df_contracts['department'] = ""
+        
+        # 匹配部门信息
+        matched_count = 0
+        for index, row in df_contracts.iterrows():
+            manager_id = str(row['manageremployeeid']).strip() if pd.notna(row['manageremployeeid']) else ""
+            
+            if manager_id and manager_id in personnel_dept_map:
+                df_contracts.at[index, 'department'] = personnel_dept_map[manager_id]
+                matched_count += 1
+        
+        process_logger.log_data_stats(
+            "部门信息匹配",
+            "完成",
+            总记录数=len(df_contracts),
+            匹配成功数=matched_count,
+            匹配率=f"{matched_count/len(df_contracts)*100:.2f}%"
+        )
+        
+        return df_contracts
+    
+    def process_contracts_excel(self, file_path: str, personnel_dept_map: Optional[Dict[str, str]] = None) -> pd.DataFrame:
         """处理合同签订清单Excel文件
         
         Args:
             file_path: Excel文件路径
+            personnel_dept_map: 人员编号到部门的映射字典，可选
             
         Returns:
             pd.DataFrame: 处理后的数据
@@ -404,6 +447,10 @@ class DataCleaner:
             # 拆分经费号行
             df_split = self.split_fundids_rows(df_filtered)
             
+            # 如果提供了人员部门映射，则匹配部门信息
+            if personnel_dept_map:
+                df_split = self.match_department_info(df_split, personnel_dept_map)
+            
             process_logger.log_end("处理合同签订清单", 最终记录数=len(df_split))
             return df_split
             
@@ -437,6 +484,86 @@ class DataCleaner:
         ]
         
         return any(test_indicators)
+    
+    def load_personnel_list(self, folder_path: str) -> Dict[str, str]:
+        """从文件夹中查找并加载人员名单
+        
+        Args:
+            folder_path: 包含人员名单的文件夹路径
+            
+        Returns:
+            Dict[str, str]: 人员编号到部门的映射字典
+            
+        Raises:
+            FileNotFoundError: 如果找不到人员名单文件
+        """
+        process_logger.log_start("查找人员名单文件", folder_path=folder_path)
+        
+        # 查找包含"人员名单"字样的Excel文件
+        personnel_files = []
+        excel_extensions = ['.xlsx', '.xls']
+        
+        for file in os.listdir(folder_path):
+            if any(file.lower().endswith(ext) for ext in excel_extensions):
+                if '人员名单' in file:
+                    personnel_files.append(os.path.join(folder_path, file))
+        
+        if not personnel_files:
+            error_msg = f"在文件夹 {folder_path} 中未找到人员名单文件"
+            process_logger.log_error("人员名单", error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        # 使用找到的第一个人员名单文件
+        personnel_file = personnel_files[0]
+        process_logger.log_excel_operation("读取人员名单", personnel_file)
+        
+        try:
+            # 读取Excel文件，只取前三列
+            df = pd.read_excel(personnel_file, usecols=[0, 1, 2])
+            
+            # 确保列名正确（A列=人员编号, B列=姓名, C列=部门）
+            df.columns = ['人员编号', '姓名', '部门']
+            
+            # 创建人员编号到部门的映射
+            personnel_dept_map = {}
+            for _, row in df.iterrows():
+                employee_id = str(row['人员编号']).strip()
+                department = str(row['部门']).strip() if pd.notna(row['部门']) else ""
+                
+                if employee_id and employee_id.lower() not in ['nan', 'none', '']:
+                    personnel_dept_map[employee_id] = department
+            
+            process_logger.log_data_stats(
+                "人员名单加载",
+                "成功",
+                文件路径=personnel_file,
+                总记录数=len(df),
+                有效记录数=len(personnel_dept_map)
+            )
+            
+            return personnel_dept_map
+            
+        except Exception as e:
+            process_logger.log_error("读取人员名单", str(e), file_path=personnel_file)
+            raise
+    
+    def find_personnel_file(self, folder_path: str) -> Optional[str]:
+        """查找文件夹中的人员名单文件
+        
+        Args:
+            folder_path: 要搜索的文件夹路径
+            
+        Returns:
+            Optional[str]: 找到的人员名单文件路径，如果没找到返回None
+        """
+        excel_extensions = ['.xlsx', '.xls']
+        
+        for file in os.listdir(folder_path):
+            if any(file.lower().endswith(ext) for ext in excel_extensions):
+                if '人员名单' in file:
+                    return os.path.join(folder_path, file)
+        
+        return None
     
     def process_project_funds_excel(self, file_path: str) -> pd.DataFrame:
         """处理经费到账清单Excel文件

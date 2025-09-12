@@ -608,6 +608,14 @@ class RMSProcessorGUI:
         contracts_folder = self.contracts_path.get()
         try:
             results = self.main_processor.process_contracts_folder(contracts_folder)
+            
+            # 检查处理是否成功
+            if not results.get('success', True):
+                # 如果处理失败，显示错误消息
+                error_msg = results.get('message', '未知错误')
+                self.log_message(f"合同数据处理失败: {error_msg}", "ERROR")
+                return
+            
             self.log_message(
                 f"合同数据处理完成: 处理 {results['processed_files']} 个文件，"
                 f"插入 {results['total_inserted']} 条，更新 {results['total_updated']} 条",
