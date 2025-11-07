@@ -144,7 +144,7 @@ class DatabaseManager:
                         updateid VARCHAR(100),
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(fundid, transactiondate, vouchernumber)
+                        UNIQUE(fundid, transactiondate, vouchernumber, debitamount, balance)
                     )
                 """)
                 
@@ -178,6 +178,9 @@ class DatabaseManager:
                 except sqlite3.OperationalError:
                     pass  # oa_sync_id字段不存在
                 
+                # 检查并升级transactions表的唯一约束
+                self._upgrade_transactions_table_if_needed(conn)
+                
                 # 启用WAL模式提高并发性能
                 conn.execute("PRAGMA journal_mode=WAL")
                 # 启用外键约束
@@ -187,6 +190,90 @@ class DatabaseManager:
                 
         except Exception as e:
             process_logger.log_error("数据库初始化", str(e))
+            raise
+    
+    def _upgrade_transactions_table_if_needed(self, conn):
+        """检查并升级transactions表的唯一约束"""
+        try:
+            # 获取当前表的索引信息
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA index_list(transactions)")
+            indexes = cursor.fetchall()
+            
+            # 检查是否存在旧的唯一约束（只有3个字段）
+            needs_upgrade = True
+            for index in indexes:
+                if index[2] == 1:  # unique index
+                    cursor.execute(f"PRAGMA index_info({index[1]})")
+                    index_cols = cursor.fetchall()
+                    if len(index_cols) == 5:  # 新的唯一约束有5个字段
+                        needs_upgrade = False
+                        break
+            
+            if needs_upgrade:
+                process_logger.logger.info("检测到transactions表需要升级唯一约束")
+                
+                # 备份现有数据
+                cursor.execute("SELECT * FROM transactions")
+                existing_data = cursor.fetchall()
+                columns = [desc[0] for desc in cursor.description]
+                
+                # 删除旧表
+                conn.execute("DROP TABLE IF EXISTS transactions_backup")
+                conn.execute("ALTER TABLE transactions RENAME TO transactions_backup")
+                
+                # 创建新表（包含新的唯一约束）
+                conn.execute("""
+                    CREATE TABLE transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        fundid TEXT,
+                        transactiondate TEXT,
+                        vouchernumber TEXT,
+                        summary TEXT,
+                        subjectcode TEXT,
+                        subjectname TEXT,
+                        debitamount REAL,
+                        creditamount REAL,
+                        balance REAL,
+                        endingbalance REAL,
+                        totaldebit REAL,
+                        totalcredit REAL,
+                        projectname TEXT,
+                        sequencenumber INTEGER,
+                        updateid VARCHAR(100),
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(fundid, transactiondate, vouchernumber, debitamount, balance)
+                    )
+                """)
+                
+                # 恢复数据
+                if existing_data:
+                    # 构建插入语句
+                    placeholders = ','.join(['?' for _ in columns])
+                    insert_sql = f"INSERT INTO transactions ({','.join(columns)}) VALUES ({placeholders})"
+                    
+                    # 批量插入数据
+                    for row in existing_data:
+                        try:
+                            conn.execute(insert_sql, row)
+                        except sqlite3.IntegrityError as e:
+                            # 如果有重复数据，记录日志但继续处理
+                            process_logger.log_warning("数据迁移", f"跳过重复记录: {str(e)}")
+                
+                # 删除备份表
+                conn.execute("DROP TABLE transactions_backup")
+                
+                process_logger.logger.info("transactions表唯一约束升级完成")
+                
+        except Exception as e:
+            process_logger.log_error("升级transactions表", str(e))
+            # 如果升级失败，尝试恢复
+            try:
+                conn.execute("DROP TABLE IF EXISTS transactions")
+                conn.execute("ALTER TABLE transactions_backup RENAME TO transactions")
+            except:
+                pass
             raise
     
     def validate_config(self) -> Tuple[bool, str]:
@@ -710,11 +797,13 @@ class DatabaseManager:
                         else:
                             data[col] = value
                 
-                # 联合主键：fundid, transactiondate, vouchernumber
+                # 联合主键：fundid, transactiondate, vouchernumber, debitamount, balance
                 primary_keys = {
                     "fundid": data.get("fundid"),
                     "transactiondate": data.get("transactiondate"),
-                    "vouchernumber": data.get("vouchernumber")
+                    "vouchernumber": data.get("vouchernumber"),
+                    "debitamount": data.get("debitamount"),
+                    "balance": data.get("balance")
                 }
                 
                 # 检查记录是否存在
