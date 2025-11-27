@@ -140,7 +140,7 @@ python run_processor.py --check
 | 合同名称   | description   | str      |
 | 负责人     | leader        | str      |
 | 合同经费   | contractfunds | float    |
-| 签订日期   | signdate      | datetime |
+| 生效日期   | signdate      | datetime |
 
 ### 经费字段映射示例
 

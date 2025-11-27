@@ -139,6 +139,7 @@ class DatabaseManager:
                         endingbalance REAL,
                         totaldebit REAL,
                         totalcredit REAL,
+                        openingbalance REAL,
                         projectname TEXT,
                         sequencenumber INTEGER,
                         updateid VARCHAR(100),
@@ -169,7 +170,13 @@ class DatabaseManager:
                     conn.execute("ALTER TABLE transactions ADD COLUMN updateid VARCHAR(100)")
                 except sqlite3.OperationalError:
                     pass  # 字段已存在
-                
+
+                # 为现有transactions表添加openingbalance字段（如果不存在）
+                try:
+                    conn.execute("ALTER TABLE transactions ADD COLUMN openingbalance REAL")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
                 # 如果存在oa_sync_id字段，将其数据迁移到updateid字段
                 try:
                     conn.execute("UPDATE contracts SET updateid = oa_sync_id WHERE oa_sync_id IS NOT NULL")
@@ -781,11 +788,35 @@ class DatabaseManager:
             Tuple[List[Dict], List[Dict]]: (插入的记录, 更新的记录)
         """
         process_logger.log_start("保存收支明细数据到数据库")
-        
+
         inserted_records = []
         updated_records = []
-        
+
         try:
+            # 批量查询所有fundid的opening_balance状态（首次保存逻辑）
+            fundids = df['fundid'].unique().tolist()
+            fundid_has_opening_balance = {}  # {fundid: bool} 记录哪些fundid已有期初余额
+
+            if fundids:
+                # 构建IN查询，查询哪些fundid已有非NULL的openingbalance
+                placeholders = ','.join(['?' for _ in fundids])
+                query = f"""
+                    SELECT DISTINCT fundid, openingbalance
+                    FROM transactions
+                    WHERE fundid IN ({placeholders})
+                    AND openingbalance IS NOT NULL
+                """
+                cursor = self.connection.cursor()
+                cursor.execute(query, fundids)
+                results = cursor.fetchall()
+
+                # 标记哪些fundid已有期初余额
+                for row in results:
+                    fundid = row[0]
+                    fundid_has_opening_balance[fundid] = True
+
+                process_logger.logger.info(f"批量查询期初余额状态: {len(fundid_has_opening_balance)}个经费卡号已有期初余额")
+
             for index, row in df.iterrows():
                 # 准备数据（排除空值和NaN）
                 data = {}
@@ -805,13 +836,20 @@ class DatabaseManager:
                     "debitamount": data.get("debitamount"),
                     "balance": data.get("balance")
                 }
-                
+
                 # 检查记录是否存在
                 existing_record = self.check_record_exists("transactions", primary_keys)
-                
+
                 if existing_record:
                     # 更新记录
                     update_data = data.copy()
+
+                    # 首次保存逻辑：如果该fundid已有期初余额，则不更新openingbalance字段
+                    current_fundid = data.get("fundid")
+                    if current_fundid and fundid_has_opening_balance.get(current_fundid, False):
+                        update_data.pop("openingbalance", None)
+                        process_logger.logger.debug(f"经费卡号{current_fundid}已有期初余额，不更新openingbalance字段")
+
                     # 移除主键字段，避免在UPDATE语句中更新主键
                     for key in primary_keys.keys():
                         update_data.pop(key, None)
@@ -831,6 +869,13 @@ class DatabaseManager:
                 else:
                     # 插入新记录
                     insert_data = data.copy()
+
+                    # 首次保存逻辑：如果该fundid已有期初余额，则不插入openingbalance字段
+                    current_fundid = data.get("fundid")
+                    if current_fundid and fundid_has_opening_balance.get(current_fundid, False):
+                        insert_data.pop("openingbalance", None)
+                        process_logger.logger.debug(f"经费卡号{current_fundid}已有期初余额，不插入openingbalance字段")
+
                     insert_data['created_at'] = 'CURRENT_TIMESTAMP'
                     insert_data['updated_at'] = 'CURRENT_TIMESTAMP'
                     record_id = self.insert_record("transactions", insert_data)

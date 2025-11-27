@@ -26,22 +26,25 @@ class OASyncManager:
     # OA表配置信息
     TABLE_INFO = {
         "contracts": {
-            "masterTable": "formmain_0016",
+            "masterTable": "formmain_20961",
             "subTable": None,
-            "rightId": "8738386221147704578.4686476435574376301",
-            "formCode": "hetongdangan"
+            # "rightId": "8738386221147704578.4686476435574376301",
+            "rightId": "-3987276264785230250.-5526404755293779830",
+            "formCode": "keyanhetong"
         },
         "projectfunds": {
-            "masterTable": "formmain_0017",
+            "masterTable": "formmain_20960",
             "subTable": None,
-            "rightId": "-8468617479218967734.-5627575296880786341",
-            "formCode": "jingfeidaozhangqingdan"
+            # "rightId": "-8468617479218967734.-5627575296880786341",
+            "rightId": "8275895863371317926.5581798851522481528",
+            "formCode": "jingfeidaozhang"
         },
         "transactions": {
-            "masterTable": "formmain_0018",
-            "subTable": "formson_0019",
-            "rightId": "-5159805959137505715.-6609998234064302859",
-            "formCode": "shouzhimingxi",
+            "masterTable": "formmain_20958",
+            "subTable": "formson_20959",
+            # "rightId": "-5159805959137505715.-6609998234064302859",
+            "rightId": "-5360477720843995010.1941665291310747000",
+            "formCode": "jingfeishouzhi",
             "groupKey": "fundid",
             "excludeFields": ["fundid", "transname"]
         }
@@ -98,7 +101,7 @@ class OASyncManager:
             "fundids": "field0046",
             "conversiontype": "field0048",
             "licensetype": "field0049",
-            "department" :"field0050"
+            "department": "field0050"
         },
         "projectfunds": {
             "project_name": "field0001",
@@ -237,8 +240,8 @@ class OASyncManager:
             record["id"] = record_info["updateid"]
         else:
             # 对于新插入的记录，使用本地记录ID
-            # record["id"] = record_info.get("record_id", 1)
-            record["id"] = random.randint(1000000000,9999999999)
+            record["id"] = record_info.get("record_id", 1)
+            # record["id"] = random.randint(1000000000,9999999999)
         
         return record
     

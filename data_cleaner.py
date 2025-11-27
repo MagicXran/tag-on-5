@@ -395,40 +395,39 @@ class DataCleaner:
         
         return df_contracts
     
-    def process_contracts_excel(self, file_path: str, personnel_dept_map: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+    def process_contracts_excel(self, file_path: str) -> pd.DataFrame:
         """处理合同签订清单Excel文件
-        
+
         Args:
             file_path: Excel文件路径
-            personnel_dept_map: 人员编号到部门的映射字典，可选
-            
+
         Returns:
             pd.DataFrame: 处理后的数据
         """
         process_logger.log_start("处理合同签订清单", file_path=file_path)
-        
+
         try:
             # 获取合同表的字段转换器，确保所有字段按正确类型读取
             from config import get_excel_converters
             converters = get_excel_converters("contracts")
-            
+
             # 读取Excel文件，使用转换器保持所有字段的正确格式
             df = pd.read_excel(file_path, engine='xlrd', converters=converters)
             process_logger.log_excel_operation("读取", file_path, 行数=len(df), 列数=len(df.columns), 使用转换器字段数=len(converters))
-            
+
             # 数据清洗
             df_cleaned = self.clean_dataframe(df, "contracts")
-            
+
             # 智能检测是否为测试环境
             is_test_data = self._detect_test_environment(df_cleaned, "contracts")
-            
+
             # 列名映射 - 根据环境调整策略
             df_mapped = self.map_columns(
-                df_cleaned, 
-                "contracts", 
+                df_cleaned,
+                "contracts",
                 create_missing_columns=not is_test_data  # 测试环境不创建缺失列
             )
-            
+
             # 映射后再次对 fundids 字段进行清洗（确保英文列名也被处理）
             if 'fundids' in df_mapped.columns:
                 df_mapped['fundids'] = df_mapped['fundids'].apply(
@@ -440,17 +439,15 @@ class DataCleaner:
                     处理方式="二次清洗确保",
                     记录数=len(df_mapped)
                 )
-            
+
             # 数据筛选
             df_filtered = self.filter_contracts_data(df_mapped)
-            
+
             # 拆分经费号行
             df_split = self.split_fundids_rows(df_filtered)
-            
-            # 如果提供了人员部门映射，则匹配部门信息
-            if personnel_dept_map:
-                df_split = self.match_department_info(df_split, personnel_dept_map)
-            
+
+            # 不匹配部门信息，保持department字段为空
+
             process_logger.log_end("处理合同签订清单", 最终记录数=len(df_split))
             return df_split
             

@@ -135,22 +135,26 @@ class TransactionsProcessor:
             
             # 3. 解析收支明细数据
             transactions_data = self._parse_transactions_data(df, fund_info)
-            
+
             # 4. 解析汇总信息
             summary_info = self._parse_summary_data(df)
-            
-            # 5. 合并数据
+
+            # 5. 解析期初余额并添加到汇总信息中
+            opening_balance = self._parse_opening_balance(df, fund_info["经费卡号"])
+            summary_info["期初余额"] = opening_balance
+
+            # 6. 合并数据
             final_data = self._merge_data(fund_info, transactions_data, summary_info)
-            
-            # 6. 数据类型转换和清理
+
+            # 7. 数据类型转换和清理
             cleaned_data = self._clean_data(final_data)
-            
-            # 7. 保存到数据库
+
+            # 8. 保存到数据库
             db_result = self._save_to_database(cleaned_data)
-            
-            # 8. (已移除无意义的projectfunds表更新操作)
-            
-            # 9. 同步到OA系统 - 传递原始数据（中文字段名）而不是清理后的数据
+
+            # 9. (已移除无意义的projectfunds表更新操作)
+
+            # 10. 同步到OA系统 - 传递原始数据（中文字段名）而不是清理后的数据
             oa_result = None
             if self.oa_manager and final_data:
                 import asyncio
@@ -322,7 +326,59 @@ class TransactionsProcessor:
         except Exception as e:
             self.logger.error(f"解析汇总数据失败: {str(e)}")
             return {"借方累计发生额": 0.0, "贷方累计发生额": 0.0, "期末余额": 0.0}
-    
+
+    def _parse_opening_balance(self, df: pd.DataFrame, fundid: str) -> float:
+        """
+        解析期初余额（第4行C4标签，H4值）
+
+        Args:
+            df: Excel DataFrame
+            fundid: 经费卡号（用于日志记录）
+
+        Returns:
+            float: 期初余额（H4为空时返回0.0并记录WARNING）
+        """
+        try:
+            # 第4行，0-based索引为3
+            row_idx = 3
+            label_col = 2  # C列
+            value_col = 7  # H列
+
+            if row_idx >= len(df):
+                self.logger.warning(f"经费卡号{fundid}的Excel文件行数不足，无法读取期初余额")
+                return 0.0
+
+            # 验证C4是否包含"期初余额"
+            if label_col < len(df.columns):
+                label = str(df.iloc[row_idx, label_col]).strip() if pd.notna(df.iloc[row_idx, label_col]) else ""
+                if "期初余额" not in label:
+                    self.logger.warning(f"经费卡号{fundid}的第4行C列未找到'期初余额'标签，实际值: {label}")
+
+            # 读取H4的值
+            if value_col < len(df.columns):
+                value = df.iloc[row_idx, value_col]
+
+                # 检查值是否为空（None、NaN或空字符串）
+                is_empty = (value is None or
+                           pd.isna(value) or
+                           (isinstance(value, str) and value.strip() == ""))
+
+                if is_empty:
+                    self.logger.warning(f"经费卡号{fundid}的期初余额为空，已默认为0")
+                    return 0.0
+
+                # 转换为浮点数
+                opening_balance = self._safe_float_convert(value)
+                self.logger.info(f"经费卡号{fundid}生效日期: {opening_balance}")
+                return opening_balance
+            else:
+                self.logger.warning(f"经费卡号{fundid}的Excel文件列数不足，无法读取期初余额")
+                return 0.0
+
+        except Exception as e:
+            self.logger.error(f"解析经费卡号{fundid}的期初余额失败: {str(e)}")
+            return 0.0
+
     def _merge_data(self, fund_info: Dict, transactions: List[Dict], summary: Dict) -> List[Dict]:
         """合并基础信息、明细数据和汇总信息"""
         merged_data = []
@@ -496,10 +552,10 @@ class TransactionsProcessor:
         """构建OA请求载荷 - 基于new_main.py的主从表逻辑"""
         table_name = "transactions"
         table_info = {
-            "masterTable": "formmain_0018",
-            "subTable": "formson_0019", 
-            "rightId": "-5159805959137505715.-6609998234064302859",
-            "formCode": "shouzhimingxi",
+            "masterTable": "formmain_20958",
+            "subTable": "formson_20959", 
+            "rightId": "-5360477720843995010.1941665291310747000",
+            "formCode": "jingfeishouzhi",
             "groupKey": "fundid",
             # 只排除在从表中不需要的主表字段
             "excludeFields": ["fundid", "transname"]
@@ -512,7 +568,8 @@ class TransactionsProcessor:
             "借方累计发生额": "field0003",
             "贷方累计发生额": "field0004",
             "期末余额": "field0005",
-            "项目编号": "field0015"  # 如果数据中有的话
+            "项目编号": "field0015" ,
+            "期初余额": "field0016"
         }
         
         # 从表字段映射：中文名 -> OA字段编码

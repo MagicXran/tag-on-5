@@ -42,24 +42,24 @@ def get_database_config():
         return MYSQL_CONFIG
 
 # OA系统配置
-OA_CONFIG = {
-    "base_url": "http://10.0.3.39",
-    "login_name": "admin",
-    "rest_user": "beike", 
-    "rest_pass": "de900bd7-dd69-4002-83e1-88e5acfe3ccd",
-    "timeout": 30,
-    "max_retries": 3
-}
-
-# 正式环境
 # OA_CONFIG = {
-#     "base_url": "http://222.28.53.189:8089",
-#     "login_name": "keyanzhanghao",
-#     "rest_user": "keyanzhanghao", 
-#     "rest_pass": "1c270a3d-34db-4c61-a572-65a0c9bc8110",
+#     "base_url": "http://10.0.3.39",
+#     "login_name": "admin",
+#     "rest_user": "beike", 
+#     "rest_pass": "de900bd7-dd69-4002-83e1-88e5acfe3ccd",
 #     "timeout": 30,
 #     "max_retries": 3
 # }
+
+# 正式环境
+OA_CONFIG = {
+    "base_url": "http://222.28.53.189:8089",
+    "login_name": "王紫薇",
+    "rest_user": "keyanzhanghao", 
+    "rest_pass": "1c270a3d-34db-4c61-a572-65a0c9bc8110",
+    "timeout": 30,
+    "max_retries": 3
+}
 
 # 数据类型转换器配置
 def safe_str_convert(value) -> str:
@@ -174,7 +174,7 @@ CONTRACTS_FIELD_TYPES = {
     "负责人": "str",
     "合同经费": "float",
     "合同分类": "str",
-    "签订日期": "datetime",
+    "生效日期": "datetime",
     "所属单位": "str",
     "项目成员": "str",
     "登记号": "str",
@@ -259,7 +259,8 @@ TRANSACTIONS_FIELD_TYPES = {
     "借方累计发生额": "float",
     "贷方累计发生额": "float",
     "项目名称": "str",
-    "序号1": "int"
+    "序号1": "int",
+    "期初余额": "float"
 }
 
 # 列名映射配置（中文->英文）
@@ -269,7 +270,7 @@ CONTRACTS_COLUMN_MAPPING = {
     "负责人": "leader",
     "合同经费": "contractfunds",
     "合同分类": "contractclassification",
-    "签订日期": "signdate",
+    "生效日期": "signdate",
     "所属单位": "undertakingunit",
     "项目成员": "projectmembers",
     "登记号": "registrationid",
@@ -354,7 +355,8 @@ TRANSACTIONS_COLUMN_MAPPING = {
     "借方累计发生额": "totaldebit",
     "贷方累计发生额": "totalcredit",
     "项目名称": "projectname",
-    "序号1": "sequencenumber"
+    "序号1": "sequencenumber",
+    "期初余额": "openingbalance"
 }
 
 # 业务筛选条件配置
@@ -379,7 +381,7 @@ BUSINESS_FILTER_CONFIG = {
 OA_FIELD_MAPPING = {
     "contracts": {
         "field0001": "合同编号", "field0002": "合同名称", "field0003": "负责人",
-        "field0004": "合同经费", "field0005": "合同分类", "field0006": "签订日期",
+        "field0004": "合同经费", "field0005": "合同分类", "field0006": "生效日期",
         "field0007": "所属单位", "field0008": "项目成员", "field0009": "登记号",
         "field0010": "开始日期", "field0011": "终止日期", "field0012": "负责人类型",
         "field0013": "负责人电话", "field0014": "负责人邮箱", "field0015": "经办人",
@@ -403,14 +405,15 @@ OA_FIELD_MAPPING = {
         "field0010": "项目负责人", "field0011": "经费所在单位", "field0012": "项目分类",
         "field0013": "财务回单编号", "field0014": "留校金额", "field0015": "外拨金额",
         "field0016": "来款单位", "field0017": "来款类型", "field0018": "审核状态1",
-        "field0019": "项目性质", "field0020": "项目级别"
+        "field0019": "项目性质", "field0020": "项目级别","field0024": "单据号"
     },
     "transactions": {
         "field0001": "经费卡号", "field0002": "项目名称", "field0003": "借方累计发生额",
-        "field0004": "贷方累计发生额", "field0005": "期末余额", "field0006": "序号1",
-        "field0007": "日期", "field0008": "凭证号", "field0009": "摘要",
-        "field0010": "科目代码", "field0011": "科目名称", "field0012": "借方金额",
-        "field0013": "贷方金额", "field0014": "余额", "field0015": "项目编号"
+        "field0004": "贷方累计发生额", "field0005": "期末余额", "field0016": "期初余额",
+        "field0006": "序号1", "field0007": "日期", "field0008": "凭证号",
+        "field0009": "摘要", "field0010": "科目代码", "field0011": "科目名称",
+        "field0012": "借方金额", "field0013": "贷方金额", "field0014": "余额",
+        "field0015": "项目编号"
     }
 }
 
