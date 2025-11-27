@@ -123,7 +123,8 @@ class OASyncManager:
             "payment_type": "field0017",
             "audit_status": "field0018",
             "project_nature": "field0019",
-            "project_level": "field0020"
+            "project_level": "field0020",
+            "unid": "field0024"  # 单据号（系统生成UUID）
         },
         "transactions": {
             "fundid": "field0001",
@@ -699,10 +700,10 @@ class OASyncService:
             "transactions"
         )
     
-    def update_local_oa_ids(self, database_manager, sync_results: Dict[str, List[str]], 
+    def update_local_oa_ids(self, database_manager, sync_results: Dict[str, List[str]],
                            inserted_records: List[Dict], table_name: str):
         """更新本地数据库中的OA同步ID
-        
+
         Args:
             database_manager: 数据库管理器
             sync_results: OA同步结果
@@ -710,29 +711,29 @@ class OASyncService:
             table_name: 表名
         """
         insert_ids = sync_results.get("insert_ids", [])
-        
+
         # 只为新插入的记录更新OA ID
         for i, record_info in enumerate(inserted_records):
             if i < len(insert_ids):
                 oa_id = insert_ids[i]
-                
+
                 # 根据表类型确定主键
                 if table_name == "contracts":
                     primary_keys = {"contractid": record_info["contractid"]}
                 elif table_name == "projectfunds":
-                    # 使用配置中的经费表主键字段组合
-                    from config import DATABASE_PRIMARY_KEYS
-                    primary_key_fields = DATABASE_PRIMARY_KEYS["projectfunds"]
-                    primary_keys = {}
-                    
-                    # 从record_info中获取主键值
-                    if "primary_keys" in record_info:
-                        # 新格式：使用primary_keys字典
+                    # 经费表主键为unid（系统生成的UUID）
+                    if "unid" in record_info:
+                        primary_keys = {"unid": record_info["unid"]}
+                    elif "primary_keys" in record_info:
                         primary_keys = record_info["primary_keys"].copy()
                     else:
-                        # 兼容旧格式：从record_info中直接提取
-                        for key_field in primary_key_fields:
-                            primary_keys[key_field] = record_info.get(key_field) or record_info["data"].get(key_field)
+                        # 从data中获取unid
+                        unid = record_info.get("data", {}).get("unid")
+                        if unid:
+                            primary_keys = {"unid": unid}
+                        else:
+                            process_logger.log_warning("OA同步", f"经费记录缺少unid，跳过更新OA ID")
+                            continue
                 elif table_name == "transactions":
                     # 收支明细表的主键字段组合
                     primary_keys = {
@@ -743,13 +744,13 @@ class OASyncService:
                 else:
                     process_logger.log_warning("OA同步", f"未知表类型: {table_name}")
                     continue
-                
+
                 try:
                     database_manager.update_oa_sync_id(table_name, primary_keys, oa_id)
                 except Exception as e:
-                    process_logger.log_error("OA同步", f"更新OA同步ID失败: {str(e)}", 
+                    process_logger.log_error("OA同步", f"更新OA同步ID失败: {str(e)}",
                                            table=table_name, oa_id=oa_id)
-        
+
         process_logger.log_oa_operation(
             "更新本地OA同步ID",
             table=table_name,

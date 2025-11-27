@@ -319,7 +319,7 @@ CONTRACTS_COLUMN_MAPPING = {
 
 PROJECT_FUNDS_COLUMN_MAPPING = {
     "项目名称": "project_name",
-    "经费卡负责人": "fund_manager", 
+    "经费卡负责人": "fund_manager",
     "入账经费（万元）": "funds_received",
     "经费账号": "fundid",
     "拨款时间": "allocation_date",
@@ -329,7 +329,7 @@ PROJECT_FUNDS_COLUMN_MAPPING = {
     "经费卡负责人工号": "manager_id",
     "项目负责人": "project_leader",
     "所在单位": "fund_unit",
-    "项目分类": "project_category", 
+    "项目分类": "project_category",
     "财务回单编号": "receipt_id",
     "留校金额（万元）": "retained_funds",
     "外拨金额": "allocated_funds",
@@ -337,7 +337,8 @@ PROJECT_FUNDS_COLUMN_MAPPING = {
     "来款类型": "payment_type",
     "审核状态": "audit_status",
     "项目性质": "project_nature",
-    "项目级别": "project_level"
+    "项目级别": "project_level",
+    "单据号": "unid"  # 系统自动生成UUID，不来自Excel
 }
 
 # 收支明细表列名映射配置
@@ -473,7 +474,7 @@ TRANSACTIONS_EXCEL_CONSTANTS = {
 # 数据库表主键配置
 DATABASE_PRIMARY_KEYS = {
     "contracts": ["contractid"],  # 合同表主键
-    "projectfunds": ["fundid", "allocation_date", "contractid"],  # 经费表联合主键
+    "projectfunds": ["unid"],  # 经费表主键：单据号（系统自动生成UUID，每条记录唯一）
     "transactions": ["fundid", "transactiondate", "vouchernumber", "debitamount", "balance"]  # 收支明细表联合主键
 }
 

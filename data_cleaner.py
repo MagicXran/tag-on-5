@@ -564,43 +564,76 @@ class DataCleaner:
     
     def process_project_funds_excel(self, file_path: str) -> pd.DataFrame:
         """处理经费到账清单Excel文件
-        
+
         Args:
             file_path: Excel文件路径
-            
+
         Returns:
-            pd.DataFrame: 处理后的数据
+            pd.DataFrame: 处理后的数据（包含系统生成的unid字段）
         """
         process_logger.log_start("处理经费到账清单", file_path=file_path)
-        
+
         try:
             # 获取经费表的字段转换器，确保所有字段按正确类型读取
             from config import get_excel_converters
             converters = get_excel_converters("project_funds")
-            
+
             # 读取Excel文件，使用转换器保持所有字段的正确格式
             df = pd.read_excel(file_path, engine='xlrd', converters=converters)
             process_logger.log_excel_operation("读取", file_path, 行数=len(df), 列数=len(df.columns), 使用转换器字段数=len(converters))
-            
+
             # 数据清洗
             df_cleaned = self.clean_dataframe(df, "project_funds")
-            
+
             # 智能检测是否为测试环境
             is_test_data = self._detect_test_environment(df_cleaned, "project_funds")
-            
+
             # 列名映射 - 根据环境调整策略
             df_mapped = self.map_columns(
-                df_cleaned, 
-                "project_funds", 
+                df_cleaned,
+                "project_funds",
                 create_missing_columns=not is_test_data  # 测试环境不创建缺失列
             )
-            
+
             # 数据筛选
             df_filtered = self.filter_project_funds_data(df_mapped)
-            
-            process_logger.log_end("处理经费到账清单", 最终记录数=len(df_filtered))
-            return df_filtered
-            
+
+            # 为每条记录生成唯一的unid（UUID）
+            df_with_unid = self._generate_unid_for_project_funds(df_filtered)
+
+            process_logger.log_end("处理经费到账清单", 最终记录数=len(df_with_unid))
+            return df_with_unid
+
         except Exception as e:
             process_logger.log_error("Excel处理", str(e), file_path=file_path)
-            raise 
+            raise
+
+    def _generate_unid_for_project_funds(self, df: pd.DataFrame) -> pd.DataFrame:
+        """为经费到账数据生成唯一的单据号（unid）
+
+        每条记录生成一个UUID作为唯一标识，用于本地数据库和OA系统同步。
+
+        Args:
+            df: 经费数据DataFrame
+
+        Returns:
+            pd.DataFrame: 添加了unid字段的DataFrame
+        """
+        import uuid
+
+        if df.empty:
+            df['unid'] = []
+            return df
+
+        # 为每条记录生成UUID
+        df = df.copy()
+        df['unid'] = [str(uuid.uuid4()) for _ in range(len(df))]
+
+        process_logger.log_data_stats(
+            "生成单据号",
+            "经费到账数据",
+            记录数=len(df),
+            示例unid=df['unid'].iloc[0] if len(df) > 0 else "无"
+        )
+
+        return df 
