@@ -218,8 +218,8 @@ class TransactionsProcessor:
                 self.logger.error(f"经费卡号位数不足8位: {raw_fund_id} ({len(raw_fund_id)}位)")
                 return None
             
-            # 移除经费卡号部分（跳过原始数字的完整长度）
-            remaining_content = header_content[len(raw_fund_id):].strip()
+            # 移除经费卡号部分（固定跳过8位，项目名称可能以数字开头）
+            remaining_content = header_content[len(fund_id):].strip()
             
             # 移除括号部分（如果存在）
             bracket_pattern = r"^[（(][^）)]*[）)]"
