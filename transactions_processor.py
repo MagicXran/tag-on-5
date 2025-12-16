@@ -199,18 +199,27 @@ class TransactionsProcessor:
                 return None
             
             self.logger.debug(f"解析经费卡号信息: {header_content}")
-            
-            # 解析经费卡号
+
+            # 解析经费卡号 - 固定8位数字
             fund_id_pattern = r"^(\d+)"
             fund_id_match = re.match(fund_id_pattern, header_content)
             if not fund_id_match:
                 self.logger.error(f"无法解析经费卡号: {header_content}")
                 return None
+
+            raw_fund_id = fund_id_match.group(1)
+
+            # 经费号固定8位，超长则截取并警告
+            if len(raw_fund_id) >= 8:
+                fund_id = raw_fund_id[:8]
+                if len(raw_fund_id) > 8:
+                    self.logger.warning(f"经费卡号原始值过长({len(raw_fund_id)}位)，已截取前8位: {raw_fund_id} -> {fund_id}")
+            else:
+                self.logger.error(f"经费卡号位数不足8位: {raw_fund_id} ({len(raw_fund_id)}位)")
+                return None
             
-            fund_id = fund_id_match.group(1)
-            
-            # 移除经费卡号部分
-            remaining_content = header_content[len(fund_id):].strip()
+            # 移除经费卡号部分（跳过原始数字的完整长度）
+            remaining_content = header_content[len(raw_fund_id):].strip()
             
             # 移除括号部分（如果存在）
             bracket_pattern = r"^[（(][^）)]*[）)]"
