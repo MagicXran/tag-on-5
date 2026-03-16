@@ -214,9 +214,6 @@ CONTRACTS_FIELD_TYPES = {
     "专利(软著)号": "str",
     "负责人职工号": "str",
     "软著件数": "int",
-    "转化类型": "str",
-    "许可类型": "str",
-    "生效日期": "datetime",
     "部门": "str"
 }
 
@@ -311,9 +308,6 @@ CONTRACTS_COLUMN_MAPPING = {
     "负责人职工号": "manageremployeeid",
     "软著件数": "copyrightcount",
     "经费卡号": "fundids",
-    "转化类型": "conversiontype",
-    "许可类型": "licensetype",
-    "生效日期": "effective_date",
     "部门": "department"
 }
 
@@ -396,8 +390,7 @@ OA_FIELD_MAPPING = {
         "field0037": "甲方所属省份", "field0038": "甲方所属地市", "field0039": "甲方邮编",
         "field0040": "甲方地址", "field0041": "专利件数", "field0042": "到账金额",
         "field0043": "专利软著号", "field0044": "负责人职工号", "field0045": "软著件数",
-        "field0046": "经费卡号", "field0047": "项目所属部门", "field0048": "转化类型",
-        "field0049": "许可类型", "field0050": "部门"
+        "field0046": "经费卡号", "field0047": "项目所属部门", "field0050": "部门"
     },
     "project_funds": {
         "field0001": "项目名称", "field0002": "经费卡号", "field0003": "经费卡负责人",

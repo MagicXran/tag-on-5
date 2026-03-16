@@ -48,8 +48,8 @@ class DatabaseManagementWindow:
                     "formscooperation", "projectsource", "socialeconomictarget", "neic", "auditstatus", 
                     "remarks", "iseffective", "partyaname", "partyatype", "partyacontact", "partyatel", 
                     "partaprovince", "partyacity", "partaaddress", "partapostalcode", "patentcount", 
-                    "amountreceived", "copyrightid", "manageremployeeid", "copyrightcount", "fundids", 
-                    "conversiontype", "licensetype", "effective_date", "updateid", "created_at", "updated_at"
+                    "amountreceived", "copyrightid", "manageremployeeid", "copyrightcount", "fundids",
+                    "updateid", "created_at", "updated_at"
                 ]
             },
             "projectfunds": {
