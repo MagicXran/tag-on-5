@@ -99,7 +99,9 @@ class OASyncManager:
             "manageremployeeid": "field0044",
             "copyrightcount": "field0045",
             "fundids": "field0046",
-            "department": "field0050"
+            "department": "field0050",
+            "purchasefunds": "field0087",
+            "cooperationfunds": "field0088"
         },
         "projectfunds": {
             "project_name": "field0001",

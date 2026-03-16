@@ -49,6 +49,7 @@ class DatabaseManagementWindow:
                     "remarks", "iseffective", "partyaname", "partyatype", "partyacontact", "partyatel", 
                     "partaprovince", "partyacity", "partaaddress", "partapostalcode", "patentcount", 
                     "amountreceived", "copyrightid", "manageremployeeid", "copyrightcount", "fundids",
+                    "purchasefunds", "cooperationfunds",
                     "updateid", "created_at", "updated_at"
                 ]
             },
