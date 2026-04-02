@@ -483,43 +483,95 @@ class TransactionsProcessor:
     
 
     async def _sync_to_oa(self, data: List[Dict[str, Any]], db_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """同步数据到OA系统 - 基于new_main.py逻辑重构"""
+        """同步数据到OA系统 - 按fundid判断新增/更新
+
+        OA以经费卡号为唯一主键，因此：
+        - 数据库中该fundid无updateid → OA新增(add)
+        - 数据库中该fundid有updateid → OA更新(update)
+        """
         try:
             if not self.oa_manager:
                 self.logger.warning("OA管理器未初始化，跳过OA同步")
                 return None
-            
-            # 检查是否有数据需要同步
+
             if not data:
                 self.logger.info("无数据需要同步到OA")
                 return None
-            
-            # 根据数据库操作结果决定OA操作类型
-            operation = "add" if db_result.get("inserted", 0) > 0 else "update"
-            
-            # 如果是更新操作，需要先查询updateid
-            if operation == "update":
-                data = await self._enrich_data_with_updateid(data)
-            
-            # 构建OA请求数据，基于new_main.py的主从表逻辑
-            request_payload = self._build_oa_request_payload(data, operation)
-            
-            # 发送请求到OA
-            oa_result = await self._send_oa_request(request_payload, operation)
-            
-            # 处理OA响应，保存updateid到数据库
-            if oa_result and operation == "add":
-                success_ids = self._extract_success_ids(oa_result)
-                if success_ids:
-                    await self._save_update_ids(data, success_ids, request_payload)
-            
-            self.logger.info(f"OA同步完成: {oa_result}")
-            return oa_result
-            
+
+            # 按经费卡号分组
+            groups = {}
+            for record in data:
+                fund_id = record.get("经费卡号")
+                if fund_id:
+                    if fund_id not in groups:
+                        groups[fund_id] = []
+                    groups[fund_id].append(record)
+
+            # 对每个fundid，查询数据库中是否已有updateid（即是否已同步过OA）
+            add_data = []
+            update_data = []
+            fundid_updateid_map = {}
+
+            for fund_id, records in groups.items():
+                updateid = self._get_oa_updateid_by_fundid(fund_id)
+                if updateid:
+                    self.logger.info(f"经费卡号{fund_id}已存在OA记录(updateid={updateid})，执行更新")
+                    fundid_updateid_map[fund_id] = updateid
+                    update_data.extend(records)
+                else:
+                    self.logger.info(f"经费卡号{fund_id}在OA中不存在，执行新增")
+                    add_data.extend(records)
+
+            results = {"add": None, "update": None}
+
+            # 处理新增
+            if add_data:
+                self.logger.info(f"OA新增: {len(add_data)}条记录")
+                add_payload = self._build_oa_request_payload(add_data, "add")
+                add_result = await self._send_oa_request(add_payload, "add")
+                results["add"] = add_result
+                if add_result:
+                    success_ids = self._extract_success_ids(add_result)
+                    if success_ids:
+                        await self._save_update_ids(add_data, success_ids, add_payload)
+
+            # 处理更新
+            if update_data:
+                self.logger.info(f"OA更新: {len(update_data)}条记录")
+                update_payload = self._build_oa_request_payload(update_data, "update", fundid_updateid_map)
+                update_result = await self._send_oa_request(update_payload, "update")
+                results["update"] = update_result
+
+            self.logger.info(f"OA同步完成: 新增={results['add']}, 更新={results['update']}")
+            return results
+
         except Exception as e:
             self.logger.error(f"OA同步失败: {str(e)}")
             return None
     
+    def _get_oa_updateid_by_fundid(self, fund_id: str) -> Optional[str]:
+        """查询指定经费卡号在数据库中的OA updateid
+
+        Args:
+            fund_id: 经费卡号
+
+        Returns:
+            updateid字符串，不存在则返回None
+        """
+        try:
+            query = """
+                SELECT updateid FROM transactions
+                WHERE fundid = ? AND updateid IS NOT NULL AND updateid != ''
+                LIMIT 1
+            """
+            result = self.db_manager.execute_query(query, (fund_id,))
+            if result and len(result) > 0:
+                return result[0]["updateid"]
+            return None
+        except Exception as e:
+            self.logger.error(f"查询fundid={fund_id}的updateid失败: {str(e)}")
+            return None
+
     async def _enrich_data_with_updateid(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """为更新操作的数据查询并添加updateid"""
         enriched_data = []
@@ -557,7 +609,8 @@ class TransactionsProcessor:
         
         return enriched_data
     
-    def _build_oa_request_payload(self, data: List[Dict[str, Any]], operation: str = "add") -> Dict:
+    def _build_oa_request_payload(self, data: List[Dict[str, Any]], operation: str = "add",
+                                    fundid_updateid_map: Dict[str, str] = None) -> Dict:
         """构建OA请求载荷 - 基于new_main.py的主从表逻辑"""
         table_name = "transactions"
         table_info = {
@@ -622,8 +675,12 @@ class TransactionsProcessor:
                 self.logger.error(f"查询项目编号失败: {str(e)}")
                 master_record["项目编号"] = ""
             
+            # update操作时，将updateid注入主表记录，供_build_oa_record设置id
+            if operation == "update" and fundid_updateid_map and fund_id in fundid_updateid_map:
+                master_record["updateid"] = fundid_updateid_map[fund_id]
+
             master_oa_record = self._build_oa_record(
-                master_record, master_field_mapping, operation, 
+                master_record, master_field_mapping, operation,
                 exclude_fields=[], exclude_main_fields=False
             )
             
