@@ -661,16 +661,15 @@ class TransactionsProcessor:
             # 构建主表记录 - 包含主表字段
             master_record = records[0].copy()  # 取第一条记录作为主表数据源
             
-            # 查询并添加项目编号（合同号）
+            # 查询项目编号（合同号）：从projectfunds表查询，查不到则给空
             try:
                 query = "SELECT contractid FROM projectfunds WHERE fundid = ? AND contractid IS NOT NULL AND contractid != ''"
                 result = self.db_manager.execute_query(query, (fund_id,))
                 if result and len(result) > 0:
                     master_record["项目编号"] = result[0]["contractid"]
-                    self.logger.debug(f"为fundid={fund_id}查询到项目编号: {result[0]['contractid']}")
+                    self.logger.debug(f"fundid={fund_id}查询到项目编号: {result[0]['contractid']}")
                 else:
                     master_record["项目编号"] = ""
-                    self.logger.warning(f"未找到fundid={fund_id}对应的项目编号")
             except Exception as e:
                 self.logger.error(f"查询项目编号失败: {str(e)}")
                 master_record["项目编号"] = ""
