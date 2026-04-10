@@ -5,6 +5,7 @@
 
 import os
 import re
+import random
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
@@ -156,15 +157,18 @@ class TransactionsProcessor:
 
             # 10. 同步到OA系统 - 传递原始数据（中文字段名）而不是清理后的数据
             oa_result = None
+            oa_errors = []
             if self.oa_manager and final_data:
                 import asyncio
                 oa_result = asyncio.run(self._sync_to_oa(final_data, db_result))
-            
+                if oa_result and oa_result.get("oa_errors"):
+                    oa_errors = oa_result["oa_errors"]
+
             return {
                 "total_records": len(final_data),
                 "successful_records": len(cleaned_data),
                 "failed_records": len(final_data) - len(cleaned_data),
-                "errors": [],
+                "errors": oa_errors,
                 "db_result": db_result,
                 "oa_result": oa_result
             }
@@ -378,7 +382,7 @@ class TransactionsProcessor:
 
                 # 转换为浮点数
                 opening_balance = self._safe_float_convert(value)
-                self.logger.info(f"经费卡号{fundid}生效日期: {opening_balance}")
+                self.logger.info(f"经费卡号{fundid}期初余额: {opening_balance}")
                 return opening_balance
             else:
                 self.logger.warning(f"经费卡号{fundid}的Excel文件列数不足，无法读取期初余额")
@@ -542,7 +546,19 @@ class TransactionsProcessor:
                 update_result = await self._send_oa_request(update_payload, "update")
                 results["update"] = update_result
 
-            self.logger.info(f"OA同步完成: 新增={results['add']}, 更新={results['update']}")
+            # 检测OA同步结果
+            oa_errors = []
+            if add_data and results["add"] is None:
+                oa_errors.append("OA batch-add 失败")
+            if update_data and results["update"] is None:
+                oa_errors.append("OA batch-update 失败")
+
+            if oa_errors:
+                self.logger.error(f"OA同步存在错误: {oa_errors}")
+            else:
+                self.logger.info(f"OA同步成功: 新增={results['add'] is not None}, 更新={results['update'] is not None}")
+
+            results["oa_errors"] = oa_errors
             return results
 
         except Exception as e:
@@ -572,43 +588,6 @@ class TransactionsProcessor:
             self.logger.error(f"查询fundid={fund_id}的updateid失败: {str(e)}")
             return None
 
-    async def _enrich_data_with_updateid(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """为更新操作的数据查询并添加updateid"""
-        enriched_data = []
-        
-        for record in data:
-            enriched_record = record.copy()
-            
-            # 从数据库查询updateid
-            try:
-                query = """
-                    SELECT updateid FROM transactions 
-                    WHERE fundid = ? AND transactiondate = ? AND vouchernumber = ? AND balance = ?
-                    AND updateid IS NOT NULL AND updateid != ''
-                """
-                
-                params = (
-                    record.get("经费卡号"),
-                    record.get("日期"),
-                    record.get("凭证号"), 
-                    record.get("余额")
-                )
-                
-                result = self.db_manager.execute_query(query, params)
-                if result and len(result) > 0:
-                    updateid = result[0]["updateid"]
-                    enriched_record["updateid"] = updateid
-                    self.logger.debug(f"找到updateid: {updateid} for 经费卡号={record.get('经费卡号')}, 凭证号={record.get('凭证号')}")
-                else:
-                    self.logger.warning(f"未找到updateid for 经费卡号={record.get('经费卡号')}, 凭证号={record.get('凭证号')}")
-                    
-            except Exception as e:
-                self.logger.error(f"查询updateid失败: {str(e)}")
-            
-            enriched_data.append(enriched_record)
-        
-        return enriched_data
-    
     def _build_oa_request_payload(self, data: List[Dict[str, Any]], operation: str = "add",
                                     fundid_updateid_map: Dict[str, str] = None) -> Dict:
         """构建OA请求载荷 - 基于new_main.py的主从表逻辑"""
@@ -755,9 +734,13 @@ class TransactionsProcessor:
         
         # 设置记录ID - 基于new_main.py逻辑
         if operation == "update" and record.get("updateid"):
+            # 主表记录：使用OA真实记录ID
             oa_record["id"] = record["updateid"]
+        elif operation == "update":
+            # update操作的子表记录：用随机大数ID，告诉OA"这是新增的子记录"
+            oa_record["id"] = random.randint(1000000000000, 9999999999999)
         else:
-            # 对于新记录，使用序号或生成ID
+            # add操作：OA会忽略此临时ID，自动分配真实ID
             oa_record["id"] = record.get("序号1", 1)
         
         return oa_record

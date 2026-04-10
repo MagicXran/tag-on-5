@@ -752,14 +752,16 @@ class RMSProcessorGUI:
                 self.transactions_processor.oa_manager = None
                 
             results = self.transactions_processor.process_transactions_folder(transactions_folder)
+            has_errors = bool(results.get('errors'))
+            level = "WARNING" if has_errors else "SUCCESS"
             self.log_message(
                 f"收支明细处理完成: 处理 {results['processed_files']} 个文件，"
                 f"成功 {results['successful_records']} 条，失败 {results['failed_records']} 条",
-                "SUCCESS"
+                level
             )
-            # 显示错误信息
-            for error in results.get('errors', []):
-                self.log_message(f"收支明细错误: {error}", "ERROR")
+            if has_errors:
+                for error in results['errors']:
+                    self.log_message(f"  OA错误: {error}", "ERROR")
                 
         except Exception as e:
             self.log_message(f"收支明细处理失败: {str(e)}", "ERROR")
