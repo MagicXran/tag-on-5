@@ -71,33 +71,39 @@ class TransactionsProcessor:
         
         results = {
             "processed_files": 0,
+            "failed_files": 0,
             "total_records": 0,
             "successful_records": 0,
             "failed_records": 0,
             "errors": []
         }
-        
+
         # 处理每个Excel文件
         for excel_file in excel_files:
             try:
                 self.logger.info(f"处理Excel文件: {excel_file}")
                 file_result = self._process_single_excel(excel_file)
-                
+
                 results["processed_files"] += 1
                 results["total_records"] += file_result["total_records"]
                 results["successful_records"] += file_result["successful_records"]
                 results["failed_records"] += file_result["failed_records"]
-                
+
                 if file_result["errors"]:
                     results["errors"].extend(file_result["errors"])
-                    
+
             except Exception as e:
                 error_msg = f"处理文件失败 {excel_file}: {str(e)}"
                 self.logger.error(error_msg)
                 results["errors"].append(error_msg)
-        
-        self.logger.info(f"文件夹处理完成，共处理{results['processed_files']}个文件，"
-                        f"成功{results['successful_records']}条，失败{results['failed_records']}条")
+                results["failed_files"] += 1
+
+        total_files = results["processed_files"] + results["failed_files"]
+        self.logger.info(
+            f"文件夹处理完成，共{total_files}个文件: "
+            f"成功{results['processed_files']}个({results['successful_records']}条记录)，"
+            f"失败{results['failed_files']}个"
+        )
         
         return results
     
@@ -159,7 +165,9 @@ class TransactionsProcessor:
                         f"(期初={opening_bal}, 期末={closing_bal})，生成汇总占位记录"
                     )
                     summary_record = {}
-                    summary_record.update(fund_info)
+                    # 只取DB和OA需要的字段，不要起始日期/终止日期（transactions表无此列）
+                    summary_record["经费卡号"] = fund_info.get("经费卡号", "")
+                    summary_record["项目名称"] = fund_info.get("项目名称", "")
                     summary_record.update(summary_info)
                     summary_record["日期"] = ""
                     summary_record["凭证号"] = "0"
