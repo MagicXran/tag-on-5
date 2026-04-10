@@ -147,6 +147,32 @@ class TransactionsProcessor:
             # 6. 合并数据
             final_data = self._merge_data(fund_info, transactions_data, summary_info)
 
+            # 6.5 无交易记录但有余额数据时，构造汇总占位记录（用于DB存updateid + OA主表同步）
+            is_summary_only = False
+            if not final_data:
+                opening_bal = summary_info.get("期初余额")
+                closing_bal = summary_info.get("期末余额")
+                if opening_bal is not None or closing_bal is not None:
+                    fundid = fund_info.get("经费卡号", "")
+                    self.logger.info(
+                        f"经费卡号{fundid}无交易记录，存在余额数据"
+                        f"(期初={opening_bal}, 期末={closing_bal})，生成汇总占位记录"
+                    )
+                    summary_record = {}
+                    summary_record.update(fund_info)
+                    summary_record.update(summary_info)
+                    summary_record["日期"] = ""
+                    summary_record["凭证号"] = "0"
+                    summary_record["摘要"] = ""
+                    summary_record["科目代码"] = ""
+                    summary_record["科目名称"] = ""
+                    summary_record["借方金额"] = 0.0
+                    summary_record["贷方金额"] = 0.0
+                    summary_record["余额"] = closing_bal if closing_bal else 0.0
+                    summary_record["序号1"] = 0
+                    final_data = [summary_record]
+                    is_summary_only = True
+
             # 7. 数据类型转换和清理
             cleaned_data = self._clean_data(final_data)
 
@@ -662,9 +688,12 @@ class TransactionsProcessor:
                 exclude_fields=[], exclude_main_fields=False
             )
             
-            # 构建子表记录 - 包含所有明细记录的从表字段
+            # 构建子表记录 - 仅包含有实际交易数据的明细记录
             sub_oa_records = []
-            for sub_record in records:  # 每条明细记录都作为子表记录
+            for sub_record in records:
+                # 跳过汇总占位记录（无日期且凭证号为"0"），只发主表不发子表
+                if not sub_record.get("日期") and str(sub_record.get("凭证号", "")) == "0":
+                    continue
                 sub_oa_record = self._build_oa_record(
                     sub_record, sub_field_mapping, operation, 
                     exclude_fields=[], exclude_main_fields=False
