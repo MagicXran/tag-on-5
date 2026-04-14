@@ -7,7 +7,7 @@ import requests
 import asyncio
 import aiohttp
 from typing import Dict, List, Optional, Any
-from config import OA_CONFIG
+from config import OA_CONFIG, RUNTIME_CONFIG
 from logger_utils import process_logger
 import random
 
@@ -404,7 +404,8 @@ class OASyncManager:
             )
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers, timeout=30) as response:
+                timeout = aiohttp.ClientTimeout(total=120)  # 大批量记录需要更长超时
+                async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
                     if response.status == 200:
                         result = await response.json()
                         process_logger.log_oa_operation(
@@ -425,7 +426,8 @@ class OASyncManager:
                         return None
         
         except Exception as e:
-            process_logger.log_error("OA同步", str(e), table=table_name, operation=operation)
+            err_msg = str(e) if str(e) else f"{type(e).__name__}(无详细信息)"
+            process_logger.log_error("OA同步", err_msg, table=table_name, operation=operation)
             return None
     
     def extract_success_ids(self, oa_response: Dict) -> List[str]:
@@ -506,13 +508,30 @@ class OASyncManager:
                 print(f"  包装后记录: {wrapped_record}")
                 wrapped_insert_records.append(wrapped_record)
             
-            insert_response = await self.send_to_oa(wrapped_insert_records, table_name, "add")
-            print(f"  OA插入响应: {insert_response}")
-            
-            if insert_response:
-                insert_ids = self.extract_success_ids(insert_response)
-                result["insert_ids"] = insert_ids
-                print(f"  提取的插入IDs: {insert_ids}")
+            # 分批发送，避免大批量超时（897条曾因30s超时失败）
+            oa_batch_size = RUNTIME_CONFIG.get("batch_size", 100)
+            total_batches = (len(wrapped_insert_records) + oa_batch_size - 1) // oa_batch_size
+            all_insert_ids = []
+
+            for batch_start in range(0, len(wrapped_insert_records), oa_batch_size):
+                batch = wrapped_insert_records[batch_start:batch_start + oa_batch_size]
+                batch_num = batch_start // oa_batch_size + 1
+                print(f"  发送新增第{batch_num}/{total_batches}批，{len(batch)}条记录")
+
+                batch_response = await self.send_to_oa(batch, table_name, "add")
+                print(f"  第{batch_num}批OA插入响应: {batch_response}")
+
+                if batch_response:
+                    batch_ids = self.extract_success_ids(batch_response)
+                    all_insert_ids.extend(batch_ids)
+                    print(f"  第{batch_num}批提取的插入IDs: {batch_ids}")
+                else:
+                    # 停止后续批次，防止ID-记录索引错位
+                    print(f"  第{batch_num}批发送失败，停止后续批次以保证ID对齐")
+                    break
+
+            result["insert_ids"] = all_insert_ids
+            print(f"  全部插入IDs({len(all_insert_ids)}个): {all_insert_ids[:5]}{'...' if len(all_insert_ids) > 5 else ''}")
         
         # 同步更新记录
         if updated_records:
@@ -573,16 +592,30 @@ class OASyncManager:
                 print(f"  包装后记录: {wrapped_record}")
                 wrapped_update_records.append(wrapped_record)
             
-            print(f"发送到OA的更新记录数: {len(wrapped_update_records)}")
-            update_response = await self.send_to_oa(wrapped_update_records, table_name, "update")
-            print(f"OA更新响应: {update_response}")
-            
-            if update_response:
-                update_ids = self.extract_success_ids(update_response)
-                result["update_ids"] = update_ids
-                print(f"提取的更新IDs: {update_ids}")
-            else:
-                print("OA更新响应为空")
+            # 分批发送更新记录
+            oa_batch_size = RUNTIME_CONFIG.get("batch_size", 100)
+            total_batches = (len(wrapped_update_records) + oa_batch_size - 1) // oa_batch_size
+            all_update_ids = []
+
+            print(f"发送到OA的更新记录数: {len(wrapped_update_records)}，分{total_batches}批")
+            for batch_start in range(0, len(wrapped_update_records), oa_batch_size):
+                batch = wrapped_update_records[batch_start:batch_start + oa_batch_size]
+                batch_num = batch_start // oa_batch_size + 1
+                print(f"  发送更新第{batch_num}/{total_batches}批，{len(batch)}条记录")
+
+                batch_response = await self.send_to_oa(batch, table_name, "update")
+                print(f"  第{batch_num}批OA更新响应: {batch_response}")
+
+                if batch_response:
+                    batch_ids = self.extract_success_ids(batch_response)
+                    all_update_ids.extend(batch_ids)
+                    print(f"  第{batch_num}批提取的更新IDs: {batch_ids}")
+                else:
+                    print(f"  第{batch_num}批更新失败，停止后续批次以保证ID对齐")
+                    break
+
+            result["update_ids"] = all_update_ids
+            print(f"全部更新IDs({len(all_update_ids)}个): {all_update_ids[:5]}{'...' if len(all_update_ids) > 5 else ''}")
         
         process_logger.log_end(
             f"OA同步完成",
