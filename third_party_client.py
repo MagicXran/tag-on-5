@@ -76,6 +76,7 @@ class ThirdPartyClient:
                     self.url,
                     json=payload,
                     timeout=self.config.get("timeout", 60),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
                 )
                 if response.status_code != 200:
                     raise RuntimeError(f"HTTP {response.status_code}")
@@ -130,11 +131,21 @@ class ThirdPartyClient:
     def _validate_response(body: Any, expected_count: int):
         if not isinstance(body, dict):
             raise ValueError("响应JSON必须是对象")
-        if body.get("code") != 0:
-            raise ValueError(f"业务返回码失败: {body.get('code')} {body.get('message', '')}")
-        if body.get("failedCount") != 0:
-            raise ValueError(f"存在失败记录: failedCount={body.get('failedCount')}")
-        if body.get("successCount") != expected_count:
+        code = ThirdPartyClient._require_integer(body, "code")
+        failed_count = ThirdPartyClient._require_integer(body, "failedCount")
+        success_count = ThirdPartyClient._require_integer(body, "successCount")
+        if code != 0:
+            raise ValueError(f"业务返回码失败: {code} {body.get('message', '')}")
+        if failed_count != 0:
+            raise ValueError(f"存在失败记录: failedCount={failed_count}")
+        if success_count != expected_count:
             raise ValueError(
-                f"成功数量不匹配: expected={expected_count}, actual={body.get('successCount')}"
+                f"成功数量不匹配: expected={expected_count}, actual={success_count}"
             )
+
+    @staticmethod
+    def _require_integer(body: Dict[str, Any], field_name: str) -> int:
+        value = body.get(field_name)
+        if type(value) is not int:
+            raise ValueError(f"响应字段{field_name}必须是整数: {value!r}")
+        return value

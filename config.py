@@ -10,7 +10,8 @@ import pandas as pd
 
 
 DATABASE_TYPE = "sqlite"
-SQLITE_CONFIG = {"database": "data/rms_v2.db"}
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+SQLITE_CONFIG = {"database": os.path.join(PROJECT_ROOT, "data", "rms_v2.db")}
 
 EXCEL_FILES = {"contracts": "", "project_funds": "", "transactions": ""}
 
@@ -79,7 +80,7 @@ def safe_datetime_convert(value: Any) -> str:
     parsed = pd.to_datetime(value, errors="coerce")
     if not pd.isna(parsed):
         return parsed.strftime("%Y-%m-%d")
-    return str(value).strip()
+    raise ValueError(f"无效日期: {value}")
 
 
 TYPE_CONVERTERS: Dict[str, Callable[[Any], Any]] = {

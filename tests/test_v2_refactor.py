@@ -13,6 +13,33 @@ DATA_ROOT = REPO_ROOT.parent / "最新数据" / "数据测试" / "2026.4.2上传
 
 
 class V2DataFlowTests(unittest.TestCase):
+    def test_invalid_nonempty_date_is_rejected(self):
+        from config import safe_datetime_convert
+
+        with self.assertRaisesRegex(ValueError, "无效日期"):
+            safe_datetime_convert("not-a-date")
+
+    def test_default_sqlite_path_is_stable_when_working_directory_changes(self):
+        import os
+
+        from config import get_database_config
+
+        expected = REPO_ROOT / "data" / "rms_v2.db"
+        with tempfile.TemporaryDirectory() as tmp:
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(tmp)
+                actual = Path(get_database_config()["database"]).resolve()
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(expected.resolve(), actual)
+
+    def test_database_management_uses_sqlite_database_type(self):
+        from database_management_gui import DATABASE_TYPE
+
+        self.assertEqual("sqlite", DATABASE_TYPE)
+
     def test_latest_contract_file_produces_expected_split_rows_and_fields(self):
         from data_cleaner import DataCleaner
 
@@ -240,6 +267,76 @@ class V2DataFlowTests(unittest.TestCase):
                 0, db.execute_query("SELECT COUNT(*) count FROM rms_fund_statement")[0]["count"]
             )
             db.close_connection()
+
+    def test_statement_rejects_transaction_outside_period(self):
+        from database_manager_sqlite import DatabaseManager
+
+        statement = {
+            "fund_id": "F1",
+            "project_name": "P1",
+            "period_start": "2026-01-01",
+            "period_end": "2026-03-31",
+            "opening_balance": 0,
+            "total_debit": 1,
+            "total_credit": 0,
+            "ending_balance": -1,
+        }
+        transaction = {
+            "fund_id": "F1",
+            "sequence_number": 1,
+            "transaction_date": "2026-04-01",
+            "voucher_number": "V1",
+            "summary": "S",
+            "subject_code": "C",
+            "subject_name": "N",
+            "debit_amount": 1,
+            "credit_amount": 0,
+            "balance": -1,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager({"database": str(Path(tmp) / "rms_v2.db")})
+            try:
+                with self.assertRaisesRegex(ValueError, "不在汇总期间"):
+                    db.save_fund_statement(statement, [transaction])
+                self.assertEqual(
+                    0,
+                    db.execute_query("SELECT COUNT(*) count FROM rms_fund_statement")[0]["count"],
+                )
+            finally:
+                db.close_connection()
+
+    def test_statement_rejects_transaction_for_other_fund(self):
+        from database_manager_sqlite import DatabaseManager
+
+        statement = {
+            "fund_id": "F1",
+            "project_name": "P1",
+            "period_start": "2026-01-01",
+            "period_end": "2026-03-31",
+            "opening_balance": 0,
+            "total_debit": 1,
+            "total_credit": 0,
+            "ending_balance": -1,
+        }
+        transaction = {
+            "fund_id": "F2",
+            "sequence_number": 1,
+            "transaction_date": "2026-01-02",
+            "voucher_number": "V1",
+            "summary": "S",
+            "subject_code": "C",
+            "subject_name": "N",
+            "debit_amount": 1,
+            "credit_amount": 0,
+            "balance": -1,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager({"database": str(Path(tmp) / "rms_v2.db")})
+            try:
+                with self.assertRaisesRegex(ValueError, "经费号不一致"):
+                    db.save_fund_statement(statement, [transaction])
+            finally:
+                db.close_connection()
 
     @staticmethod
     def _unique_columns(conn: sqlite3.Connection, table: str):

@@ -11,7 +11,7 @@ from datetime import datetime
 import threading
 import time
 
-from config import get_database_config
+from config import DATABASE_TYPE, get_database_config
 from database_manager_sqlite import DatabaseManager
 
 from logger_utils import process_logger

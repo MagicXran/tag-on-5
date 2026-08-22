@@ -303,6 +303,11 @@ class DatabaseManager:
             "total_debit", "total_credit", "ending_balance",
         ]
         statement_data = self._clean_record(statement, statement_columns)
+        cleaned_transactions = [
+            self._clean_record(transaction, TRANSACTION_COLUMNS)
+            for transaction in transactions
+        ]
+        self._validate_statement_transactions(statement_data, cleaned_transactions)
         key = (
             statement_data["fund_id"],
             statement_data["period_start"],
@@ -324,8 +329,7 @@ class DatabaseManager:
             inserted_count = 0
             updated_count = 0
             saved_transactions: List[Dict[str, Any]] = []
-            for transaction in transactions:
-                data = self._clean_record(transaction, TRANSACTION_COLUMNS)
+            for data in cleaned_transactions:
                 transaction_key = (
                     data["fund_id"], data["transaction_date"], data["voucher_number"],
                     data["debit_amount"], data["balance"],
@@ -377,6 +381,44 @@ class DatabaseManager:
             "transaction_inserted": inserted_count,
             "transaction_updated": updated_count,
         }
+
+    @classmethod
+    def _validate_statement_transactions(
+        cls,
+        statement: Dict[str, Any],
+        transactions: List[Dict[str, Any]],
+    ):
+        period_start = cls._parse_iso_date(statement["period_start"], "period_start")
+        period_end = cls._parse_iso_date(statement["period_end"], "period_end")
+        if period_start > period_end:
+            raise ValueError("汇总期间起始日期晚于终止日期")
+
+        for transaction in transactions:
+            if transaction["fund_id"] != statement["fund_id"]:
+                raise ValueError(
+                    "流水经费号不一致: "
+                    f"statement={statement['fund_id']}, transaction={transaction['fund_id']}"
+                )
+            transaction_date = cls._parse_iso_date(
+                transaction["transaction_date"], "transaction_date"
+            )
+            if not period_start <= transaction_date <= period_end:
+                raise ValueError(
+                    "流水日期不在汇总期间: "
+                    f"date={transaction['transaction_date']}, "
+                    f"period={statement['period_start']}~{statement['period_end']}"
+                )
+
+    @staticmethod
+    def _parse_iso_date(value: Any, field_name: str):
+        text = str(value).strip()
+        try:
+            parsed = datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError(f"{field_name}不是有效的YYYY-MM-DD日期: {value}") from exc
+        if parsed.strftime("%Y-%m-%d") != text:
+            raise ValueError(f"{field_name}不是有效的YYYY-MM-DD日期: {value}")
+        return parsed
 
     def _insert_record(self, conn: sqlite3.Connection, table: str, data: Dict[str, Any]) -> int:
         columns = list(data)
