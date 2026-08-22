@@ -7,9 +7,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 import threading
-import asyncio
 import sys
 import os
+import uuid
 from datetime import datetime
 
 # 导入现有的处理器
@@ -28,7 +28,10 @@ class RMSProcessorGUI:
         
         # 初始化处理器
         self.main_processor = RMSTagOnProcessor()
-        self.transactions_processor = TransactionsProcessor()
+        self.transactions_processor = TransactionsProcessor(
+            db_manager=self.main_processor.database_manager,
+            third_party_client=self.main_processor.third_party_client,
+        )
         
         # 用于控制处理线程
         self.processing_thread = None
@@ -117,7 +120,7 @@ class RMSProcessorGUI:
         self.process_contracts_data = tk.BooleanVar(value=True)
         self.process_funds_data = tk.BooleanVar(value=True)
         self.process_transactions_data = tk.BooleanVar(value=True)
-        self.enable_oa_sync = tk.BooleanVar(value=True)
+        self.enable_third_party_push = tk.BooleanVar(value=True)
         
         ttk.Checkbutton(
             options_frame, 
@@ -139,8 +142,8 @@ class RMSProcessorGUI:
         
         ttk.Checkbutton(
             options_frame, 
-            text="启用OA系统同步", 
-            variable=self.enable_oa_sync
+            text="保存后推送第三方系统",
+            variable=self.enable_third_party_push
         ).grid(row=1, column=1, sticky=tk.W, pady=2, padx=10)
         
     def setup_buttons_section(self, parent):
@@ -234,17 +237,14 @@ class RMSProcessorGUI:
             else:
                 self.log_message(f"  {key}: {value}")
         
-        # 显示OA配置
-        self.log_message("OA系统配置:")
+        # 显示第三方推送配置
+        self.log_message("第三方推送配置:")
         try:
-            oa_config = self.main_processor.oa_sync_service.sync_manager.config
-            for key, value in oa_config.items():
-                if 'pass' in key.lower() or 'password' in key.lower():
-                    self.log_message(f"  {key}: {'*' * len(str(value))}")  # 隐藏密码
-                else:
-                    self.log_message(f"  {key}: {value}")
+            push_config = self.main_processor.third_party_client.config
+            for key, value in push_config.items():
+                self.log_message(f"  {key}: {value}")
         except Exception as e:
-            self.log_message(f"获取OA配置失败: {str(e)}", "ERROR")
+            self.log_message(f"获取第三方配置失败: {str(e)}", "ERROR")
         
         self.log_message("=== 配置信息显示完成 ===")
 
@@ -356,10 +356,9 @@ class RMSProcessorGUI:
                 # 测试数据库连接
                 self.log_message("测试数据库连接...")
                 self.log_message("数据库配置信息:")
-                self.log_message(f"  主机: {self.main_processor.database_manager.config['host']}")
-                self.log_message(f"  端口: {self.main_processor.database_manager.config.get('port', 3306)}")
-                self.log_message(f"  数据库: {self.main_processor.database_manager.config['database']}")
-                self.log_message(f"  用户: {self.main_processor.database_manager.config['user']}")
+                self.log_message(
+                    f"  SQLite文件: {self.main_processor.database_manager.config['database']}"
+                )
                 
                 # 调用改进的test_connection方法
                 connection_success, connection_message = self.main_processor.database_manager.test_connection()
@@ -369,18 +368,9 @@ class RMSProcessorGUI:
                 else:
                     self.log_message(f"数据库连接失败: {connection_message}", "ERROR")
                     
-                # 测试OA连接
-                if self.enable_oa_sync.get():
-                    self.log_message("测试OA系统连接...")
-                    try:
-                        # 这里可以添加OA连接测试逻辑
-                        oa_config = self.main_processor.oa_sync_service.sync_manager.config
-                        self.log_message(f"OA系统配置:")
-                        self.log_message(f"  地址: {oa_config.get('base_url', 'N/A')}")
-                        self.log_message(f"  用户: {oa_config.get('login_name', 'N/A')}")
-                        self.log_message("OA系统连接测试完成", "SUCCESS")
-                    except Exception as oa_e:
-                        self.log_message(f"OA系统测试失败: {str(oa_e)}", "ERROR")
+                if self.enable_third_party_push.get():
+                    self.log_message(f"第三方接口地址: {self.main_processor.third_party_client.url}")
+                    self.log_message("第三方接口将在正式推送时验证", "INFO")
                     
                 self.log_message("环境测试完成", "SUCCESS")
                 
@@ -459,26 +449,32 @@ class RMSProcessorGUI:
     def run_processing(self):
         """运行数据处理（在后台线程中）"""
         try:
-            self.log_message("开始数据处理...")
+            run_id = str(uuid.uuid4())
+            self.log_message(f"开始数据处理，run_id={run_id}")
+            overall_success = True
             
             # 处理合同数据
             if self.process_contracts_data.get() and self.is_processing:
                 self.log_message("开始处理合同数据...")
-                self.process_contracts_data_only()
+                overall_success = self.process_contracts_data_only() and overall_success
             
             # 处理经费数据
             if self.process_funds_data.get() and self.is_processing:
                 self.log_message("开始处理经费数据...")
-                self.process_funds_data_only()
+                overall_success = self.process_funds_data_only() and overall_success
             
             # 处理收支明细数据
             if self.process_transactions_data.get() and self.is_processing:
                 self.log_message("开始处理收支明细数据...")
-                self.process_transactions_data_only()
+                overall_success = self.process_transactions_data_only() and overall_success
             
             if self.is_processing:
-                self.log_message("所有数据处理完成！", "SUCCESS")
-                self.status_var.set("处理完成")
+                if overall_success:
+                    self.log_message("所有数据处理完成！", "SUCCESS")
+                    self.status_var.set("处理完成")
+                else:
+                    self.log_message("数据已保存，但存在文件或第三方推送失败", "WARNING")
+                    self.status_var.set("处理完成（有错误）")
             else:
                 self.log_message("处理已被用户停止", "WARNING")
                 self.status_var.set("处理已停止")
@@ -504,11 +500,8 @@ class RMSProcessorGUI:
                 
                 # 模块版本信息
                 self.log_message("=== 模块版本信息 ===")
-                try:
-                    import pymysql
-                    self.log_message(f"PyMySQL版本: {pymysql.__version__}")
-                except ImportError as e:
-                    self.log_message(f"PyMySQL导入失败: {str(e)}", "ERROR")
+                import sqlite3
+                self.log_message(f"SQLite版本: {sqlite3.sqlite_version}")
                 
                 try:
                     import pandas as pd
@@ -588,7 +581,7 @@ class RMSProcessorGUI:
         self.is_processing = False
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
-        if self.status_var.get() not in ["处理完成", "处理出错", "处理已停止"]:
+        if self.status_var.get() not in ["处理完成", "处理完成（有错误）", "处理出错", "处理已停止"]:
             self.status_var.set("就绪")
             
     def get_excel_files(self, folder_path):
@@ -607,151 +600,51 @@ class RMSProcessorGUI:
         """只处理合同数据"""
         contracts_folder = self.contracts_path.get()
         try:
-            results = self.main_processor.process_contracts_folder(contracts_folder)
-            
-            # 检查处理是否成功
-            if not results.get('success', True):
-                # 如果处理失败，显示错误消息
-                error_msg = results.get('message', '未知错误')
-                self.log_message(f"合同数据处理失败: {error_msg}", "ERROR")
-                return
-            
+            results = self.main_processor.process_contracts_folder(
+                contracts_folder, push=self.enable_third_party_push.get()
+            )
+            level = "SUCCESS" if results.get("success") else "WARNING"
             self.log_message(
                 f"合同数据处理完成: 处理 {results['processed_files']} 个文件，"
                 f"插入 {results['total_inserted']} 条，更新 {results['total_updated']} 条",
-                "SUCCESS"
+                level,
             )
-            
-            # 显示错误信息
+            self._log_push_result("合同", results.get("push_result"))
             for error in results.get('errors', []):
                 self.log_message(f"合同处理错误: {error}", "ERROR")
-            
-            # OA同步逻辑
-            if self.enable_oa_sync.get():
-                inserted_records = results.get('all_inserted_records', [])
-                updated_records = results.get('all_updated_records', [])
-                
-                if inserted_records or updated_records:
-                    self.log_message("开始同步合同数据到OA系统...")
-                    try:
-                        # 创建异步循环并运行同步
-                        import asyncio
-                        
-                        def run_oa_sync():
-                            try:
-                                # 在后台线程中运行异步同步
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                
-                                sync_result = loop.run_until_complete(
-                                    self.main_processor.sync_contracts_to_oa(
-                                        inserted_records, updated_records
-                                    )
-                                )
-                                
-                                if sync_result:
-                                    self.log_message(
-                                        f"合同OA同步成功: 同步了 {len(inserted_records)} 条新增记录，"
-                                        f"{len(updated_records)} 条更新记录", 
-                                        "SUCCESS"
-                                    )
-                                else:
-                                    self.log_message("合同OA同步失败或无数据需要同步", "WARNING")
-                                    
-                            except Exception as e:
-                                self.log_message(f"合同OA同步失败: {str(e)}", "ERROR")
-                            finally:
-                                loop.close()
-                        
-                        # 在后台线程中运行OA同步
-                        import threading
-                        threading.Thread(target=run_oa_sync, daemon=True).start()
-                        
-                    except Exception as e:
-                        self.log_message(f"启动合同OA同步失败: {str(e)}", "ERROR")
-                else:
-                    self.log_message("合同数据处理完成，无新数据需要同步到OA", "INFO")
-            else:
-                self.log_message("OA同步已禁用，跳过合同数据同步", "INFO")
-                
+            return bool(results.get("success"))
         except Exception as e:
             self.log_message(f"合同数据处理失败: {str(e)}", "ERROR")
+            return False
     
     def process_funds_data_only(self):
         """只处理经费数据"""
         funds_folder = self.funds_path.get()
         try:
-            results = self.main_processor.process_project_funds_folder(funds_folder)
+            results = self.main_processor.process_project_funds_folder(
+                funds_folder, push=self.enable_third_party_push.get()
+            )
+            level = "SUCCESS" if results.get("success") else "WARNING"
             self.log_message(
                 f"经费数据处理完成: 处理 {results['processed_files']} 个文件，"
                 f"插入 {results['total_inserted']} 条，更新 {results['total_updated']} 条",
-                "SUCCESS"
+                level,
             )
-            
-            # 显示错误信息
+            self._log_push_result("经费到账", results.get("push_result"))
             for error in results.get('errors', []):
                 self.log_message(f"经费处理错误: {error}", "ERROR")
-            
-            # OA同步逻辑
-            if self.enable_oa_sync.get():
-                inserted_records = results.get('all_inserted_records', [])
-                updated_records = results.get('all_updated_records', [])
-                
-                if inserted_records or updated_records:
-                    self.log_message("开始同步经费数据到OA系统...")
-                    try:
-                        # 创建异步循环并运行同步
-                        import asyncio
-                        
-                        def run_oa_sync():
-                            try:
-                                # 在后台线程中运行异步同步
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                
-                                sync_result = loop.run_until_complete(
-                                    self.main_processor.sync_project_funds_to_oa(
-                                        inserted_records, updated_records
-                                    )
-                                )
-                                
-                                if sync_result:
-                                    self.log_message(
-                                        f"经费OA同步成功: 同步了 {len(inserted_records)} 条新增记录，"
-                                        f"{len(updated_records)} 条更新记录", 
-                                        "SUCCESS"
-                                    )
-                                else:
-                                    self.log_message("经费OA同步失败或无数据需要同步", "WARNING")
-                                    
-                            except Exception as e:
-                                self.log_message(f"经费OA同步失败: {str(e)}", "ERROR")
-                            finally:
-                                loop.close()
-                        
-                        # 在后台线程中运行OA同步
-                        import threading
-                        threading.Thread(target=run_oa_sync, daemon=True).start()
-                        
-                    except Exception as e:
-                        self.log_message(f"启动经费OA同步失败: {str(e)}", "ERROR")
-                else:
-                    self.log_message("经费数据处理完成，无新数据需要同步到OA", "INFO")
-            else:
-                self.log_message("OA同步已禁用，跳过经费数据同步", "INFO")
-                
+            return bool(results.get("success"))
         except Exception as e:
             self.log_message(f"经费数据处理失败: {str(e)}", "ERROR")
+            return False
     
     def process_transactions_data_only(self):
         """只处理收支明细数据"""
         transactions_folder = self.transactions_path.get()
         try:
-            # 禁用OA同步（如果用户未选择）
-            if not self.enable_oa_sync.get():
-                self.transactions_processor.oa_manager = None
-                
-            results = self.transactions_processor.process_transactions_folder(transactions_folder)
+            results = self.transactions_processor.process_transactions_folder(
+                transactions_folder, push=self.enable_third_party_push.get()
+            )
             failed_files = results.get('failed_files', 0)
             has_errors = bool(results.get('errors'))
             level = "WARNING" if has_errors else "SUCCESS"
@@ -762,12 +655,32 @@ class RMSProcessorGUI:
                 f"失败{failed_files}个",
                 level
             )
+            self._log_push_result("经费收支", results.get("push_result"))
             if has_errors:
                 for error in results['errors']:
                     self.log_message(f"  错误: {error}", "ERROR")
-                
+            return bool(results.get("success"))
         except Exception as e:
             self.log_message(f"收支明细处理失败: {str(e)}", "ERROR")
+            return False
+
+    def _log_push_result(self, label, push_result):
+        if not self.enable_third_party_push.get():
+            self.log_message(f"{label}第三方推送已禁用", "INFO")
+        elif not push_result:
+            self.log_message(f"{label}无数据需要推送", "INFO")
+        elif push_result.get("success"):
+            self.log_message(
+                f"{label}第三方推送成功，批次{len(push_result.get('batches', []))}个，"
+                f"请求尝试{push_result.get('attempts', 0)}次",
+                "SUCCESS",
+            )
+        else:
+            self.log_message(
+                f"{label} SQLite保存成功、第三方推送失败，"
+                f"失败批次{push_result.get('failed_batches', 0)}个",
+                "ERROR",
+            )
 def main():
     """主函数"""
     root = tk.Tk()

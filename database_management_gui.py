@@ -11,11 +11,8 @@ from datetime import datetime
 import threading
 import time
 
-from config import DATABASE_TYPE, get_database_config
-if DATABASE_TYPE.lower() == "sqlite":
-    from database_manager_sqlite import DatabaseManager
-else:
-    from database_manager import DatabaseManager
+from config import get_database_config
+from database_manager_sqlite import DatabaseManager
 
 from logger_utils import process_logger
 
@@ -37,43 +34,45 @@ class DatabaseManagementWindow:
         self.table_configs = {
             "contracts": {
                 "name": "合同数据表",
-                "table": "contracts",
-                "key_fields": ["contractid"],
+                "table": "rms_contract",
+                "key_fields": ["contract_id", "fund_id"],
                 "display_fields": [
-                    "id", "contractid", "description", "leader", "contractfunds", "contractclassification", 
-                    "signdate", "undertakingunit", "projectmembers", "registrationid", "startdate", "enddate", 
-                    "leadertype", "leadertelephone", "leaderemail", "operator", "operatortelephone", 
-                    "contracteffectivestatus", "contractstatus", "paymentmode", "partyaseal", "partybseal", 
-                    "contractrecovered", "statisticalattribution", "subjectclassification", "researchcategory", 
-                    "formscooperation", "projectsource", "socialeconomictarget", "neic", "auditstatus", 
-                    "remarks", "iseffective", "partyaname", "partyatype", "partyacontact", "partyatel", 
-                    "partaprovince", "partyacity", "partaaddress", "partapostalcode", "patentcount", 
-                    "amountreceived", "copyrightid", "manageremployeeid", "copyrightcount", "fundids",
-                    "purchasefunds", "cooperationfunds",
-                    "updateid", "created_at", "updated_at"
+                    "id", "contract_id", "fund_id", "contract_name", "leader",
+                    "contract_funds", "contract_category", "effective_date",
+                    "undertaking_unit", "conversion_type", "license_type",
+                    "purchase_funds", "cooperation_funds", "created_at", "updated_at"
                 ]
             },
             "projectfunds": {
-                "name": "经费数据表", 
-                "table": "projectfunds",
-                "key_fields": ["fundid", "funds_received", "contractid"],
+                "name": "经费到账表",
+                "table": "rms_fund_receipt",
+                "key_fields": ["unid"],
                 "display_fields": [
-                    "id", "project_name", "fund_manager", "funds_received", "fundid", "allocation_date", 
-                    "project_unit", "contractid", "approved_funds", "manager_id", "project_leader", 
-                    "fund_unit", "project_category", "receipt_id", "retained_funds", "allocated_funds", 
-                    "payment_unit", "payment_type", "audit_status", "project_nature", "project_level", 
-                    "updateid", "created_at", "updated_at"
+                    "id", "unid", "fund_id", "project_name", "funds_received",
+                    "allocation_date", "contract_id", "approval_number", "receipt_number",
+                    "payment_unit", "audit_status", "created_at", "updated_at"
+                ]
+            },
+            "statements": {
+                "name": "收支期间汇总表",
+                "table": "rms_fund_statement",
+                "key_fields": ["fund_id", "period_start", "period_end"],
+                "display_fields": [
+                    "id", "fund_id", "project_name", "period_start", "period_end",
+                    "opening_balance", "total_debit", "total_credit", "ending_balance",
+                    "created_at", "updated_at"
                 ]
             },
             "transactions": {
                 "name": "收支明细表",
-                "table": "transactions", 
-                "key_fields": ["fundid", "transactiondate", "vouchernumber"],
+                "table": "rms_fund_transaction",
+                "key_fields": [
+                    "fund_id", "transaction_date", "voucher_number", "debit_amount", "balance"
+                ],
                 "display_fields": [
-                    "id", "fundid", "transactiondate", "vouchernumber", "summary", "subjectcode", 
-                    "subjectname", "debitamount", "creditamount", "balance", "endingbalance", 
-                    "totaldebit", "totalcredit", "projectname", "sequencenumber", "updateid", 
-                    "created_at", "updated_at"
+                    "id", "fund_id", "sequence_number", "transaction_date",
+                    "voucher_number", "summary", "subject_code", "subject_name",
+                    "debit_amount", "credit_amount", "balance", "created_at", "updated_at"
                 ]
             }
         }
@@ -573,4 +572,4 @@ class DatabaseManagementWindow:
 
 def show_database_management(parent):
     """显示数据库管理窗口"""
-    DatabaseManagementWindow(parent) 
+    DatabaseManagementWindow(parent)

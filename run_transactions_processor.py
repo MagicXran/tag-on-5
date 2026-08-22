@@ -28,7 +28,7 @@ def parse_arguments():
                "  python run_transactions_processor.py\n"
                "  python run_transactions_processor.py --folder /path/to/folder\n"
                "  python run_transactions_processor.py --verbose\n"
-               "  python run_transactions_processor.py --no-oa-sync",
+               "  python run_transactions_processor.py --no-push",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
@@ -45,9 +45,9 @@ def parse_arguments():
     )
     
     parser.add_argument(
-        "--no-oa-sync",
+        "--no-push",
         action="store_true",
-        help="禁用OA系统同步，仅处理到数据库"
+        help="禁用第三方推送，仅处理到SQLite"
     )
     
     parser.add_argument(
@@ -136,8 +136,9 @@ def show_configuration_info(logger):
     """显示配置信息"""
     logger.info("系统配置信息:")
     logger.info(f"  - 收支明细表文件夹: {EXCEL_FILES.get('transactions', '未配置')}")
-    logger.info(f"  - OA同步状态: {'启用' if RUNTIME_CONFIG.get('enable_oa_sync', False) else '禁用'}")
-    logger.info(f"  - 主从表模式: {'启用' if RUNTIME_CONFIG.get('enable_oa_master_sub_table', False) else '禁用'}")
+    logger.info(
+        f"  - 第三方推送: {'启用' if RUNTIME_CONFIG.get('enable_third_party_push', False) else '禁用'}"
+    )
     logger.info(f"  - 批处理大小: {RUNTIME_CONFIG.get('batch_size', 100)}")
 
 
@@ -175,11 +176,6 @@ def main():
         logger.info("初始化收支明细表处理器...")
         processor = TransactionsProcessor()
         
-        # 应用命令行参数
-        if args.no_oa_sync:
-            logger.info("禁用OA同步")
-            processor.oa_manager = None
-        
         if args.batch_size != 100:
             logger.info(f"设置批处理大小: {args.batch_size}")
             # 这里可以根据需要调整批处理大小
@@ -195,7 +191,7 @@ def main():
         logger.info("开始处理收支明细表文件...")
         print("正在处理文件，请稍候...")
         
-        results = processor.process_transactions_folder(folder_path)
+        results = processor.process_transactions_folder(folder_path, push=not args.no_push)
         
         # 显示处理结果
         print_processing_summary(results, logger)
@@ -241,7 +237,7 @@ def show_help():
 常用选项:
   --folder, -f PATH     指定收支明细表文件夹路径
   --verbose, -v         启用详细输出模式
-  --no-oa-sync         禁用OA系统同步
+  --no-push            禁用第三方推送
   --dry-run            预运行模式（仅解析不保存）
   --batch-size SIZE    设置批处理大小
   --help, -h           显示帮助信息
@@ -256,14 +252,14 @@ def show_help():
   # 详细输出模式
   python run_transactions_processor.py --verbose
   
-  # 禁用OA同步
-  python run_transactions_processor.py --no-oa-sync
+  # 禁用第三方推送
+  python run_transactions_processor.py --no-push
 
 配置文件:
   请确保在 config.py 中正确配置以下信息：
   - EXCEL_FILES["transactions"]: 收支明细表文件夹路径
-  - MYSQL_CONFIG: 数据库连接配置
-  - OA_CONFIG: OA系统配置（如需同步）
+  - SQLITE_CONFIG: SQLite数据库文件配置
+  - THIRD_PARTY_CONFIG: 第三方接口配置（如需推送）
 
 支持的文件格式:
   - Excel文件 (.xlsx, .xls)
@@ -272,7 +268,7 @@ def show_help():
 注意事项:
   1. 确保文件夹路径存在且可访问
   2. 确保数据库连接正常
-  3. 如需OA同步，请确保OA系统配置正确
+  3. 如需推送，请确保第三方接口配置正确
   4. 处理大量文件时建议使用 --verbose 查看详细进度
 
 更多信息请参考: README_TRANSACTIONS.md
@@ -280,4 +276,4 @@ def show_help():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

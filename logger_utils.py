@@ -151,14 +151,13 @@ class ProcessLogger:
         self.logger.info(f"数据库操作 - {operation} - {table_name}{affected_info} | {details_info}")
     
     def log_oa_operation(self, operation, **details):
-        """记录OA系统操作
-        
-        Args:
-            operation: 操作类型
-            **details: 操作详情
-        """
+        """旧调用兼容入口；新代码统一使用 log_sync_operation。"""
+        self.log_sync_operation(operation, **details)
+
+    def log_sync_operation(self, operation, **details):
+        """记录第三方数据推送操作。"""
         details_info = " | ".join([f"{k}={v}" for k, v in details.items()])
-        self.logger.info(f"OA操作 - {operation}: {details_info}")
+        self.logger.info(f"第三方推送 - {operation}: {details_info}")
     
     def log_error(self, error_type, error_msg, **context):
         """记录错误信息
@@ -195,4 +194,4 @@ class ProcessLogger:
 
 
 # 全局日志实例
-process_logger = ProcessLogger() 
+process_logger = ProcessLogger()
